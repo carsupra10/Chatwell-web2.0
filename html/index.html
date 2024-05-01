@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatWell - Beta</title>
+    <link rel="icon" type="image/jpg" href="/html/logo.jpg">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        #messages {
+            max-height: calc(100vh - 160px);
+            /* Adjust as needed */
+            overflow-y: auto;
+
+        }
+
+        #messageInputContainer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+        }
+
+        .btn-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            /* Adjust as needed */
+            height: 50px;
+            /* Adjust as needed */
+            border-radius: 50%;
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 1000;
+        }
+
+        .btn-toggle img {
+            max-width: 100%;
+            /* Ensure the logo fits within the button */
+            max-height: 100%;
+            /* Ensure the logo fits within the button */
+        }
+
+
+        .btn-toggle i {
+            font-size: 24px;
+        }
+
+        .toggle-menu {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            display: none;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+
+        .toggle-menu.active {
+            display: block;
+        }
+
+        .toggle-menu button {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .msg {
+            background-color: #DCF8C6;
+            border-radius: 10px;
+            padding: 10px;
+            max-width: 70%;
+            /* Limit the width of sent messages */
+            align-self: flex-end;
+            /* Align sent messages to the right */
+        }
+
+        .received-message {
+            background-color: #FFFFFF;
+            border-radius: 10px;
+            padding: 10px;
+            max-width: 70%;
+            /* Limit the width of received messages */
+            align-self: flex-start;
+            /* Align received messages to the left */
+        }
+
+        .sent-message p,
+        .received-message p {
+            margin: 5px;
+            /* Remove default margin for paragraph */
+        }
+    </style>
+</head>
+
+<body class="bg-gray-200 font-sans">
+    <div class="flex flex-col h-screen">
+        <div class="flex-grow overflow-y-auto" id="messages">
+            <div class="p-4" id="msg"></div>
+        </div>
+        <div class="toggle-menu" id="toggleMenu">
+            <p>Your User ID:</p>
+            <input type="text" id="userIDDisplay" class="p-2 border rounded-lg mb-2" readonly>
+            <button id="setUserIDButton" class="p-2 bg-blue-500 text-white rounded-lg mb-2">Generate New ID</button>
+            <button id="connectButton" class="p-2 bg-blue-500 text-white rounded-lg mb-2">Connect</button>
+            <button id="disconnectButton" class="p-2 bg-red-500 text-white rounded-lg">Disconnect</button>
+        </div>
+
+        <button id="toggleBtn" class="btn-toggle">
+            <img src="/html/logo.jpg" alt="Logo" style="width: 100%;">
+
+        </button>
+
+        <div id="messageInputContainer" class="bg-white p-4">
+            <div class="flex items-center">
+                <input type="text" id="messageInput" placeholder="Type a message..."
+                    class="flex-grow p-2 border rounded-lg mr-2">
+                <button id="sendButton" class="p-2 bg-green-500 text-white rounded-lg">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js"></script>
+    <!-- Your HTML code remains unchanged -->
+
+    <script>
+        const socket = io();
+        let recipientID = '';
+
+        document.addEventListener("DOMContentLoaded", function () {
+            // Generate random 6-digit user ID
+            const userID = Math.floor(100000 + Math.random() * 900000);
+            const userIDDisplay = document.getElementById("userIDDisplay");
+            userIDDisplay.value = userID;
+
+            // Disable the setUserIDButton
+            document.getElementById("setUserIDButton").disabled = true;
+
+            // Emit the generated user ID to the server
+            socket.emit('setUserID', userID);
+
+            // Disable message input and send button initially
+            disableMessageInput();
+        });
+
+        // Event listener for the "Connect" button
+        document.getElementById("connectButton").addEventListener("click", () => {
+            const recipientID = prompt("Enter the recipient's user ID:");
+            if (recipientID) {
+                socket.emit('checkAndConnect', recipientID);
+            } else {
+                alert("Recipient ID cannot be empty.");
+            }
+        });
+
+        socket.on('connectionEstablished', ({ recipientID }) => {
+            recipientID = recipientID; // Update recipientID
+            enableMessageInput(); // Enable message input after connection is established
+            alert(`Connected to ${recipientID}.`);
+        });
+
+        socket.on('connectionRequest', ({ senderID }) => {
+            const accept = confirm(`${senderID} wants to connect. Accept?`);
+            if (accept) {
+                socket.emit('acceptConnection', senderID);
+            }
+        });
+
+        socket.on('userConnected', (userID) => {
+            recipientID = userID;
+            document.getElementById("connectButton").disabled = true;
+            enableMessageInput(); // Enable message input after user is connected
+            alert(`${userID} is now connected.`);
+            socket.emit('connectionEstablished', { recipientID });
+        });
+
+        socket.on('error', (errorMessage) => {
+            alert(errorMessage);
+        });
+
+        document.getElementById("disconnectButton").addEventListener("click", () => {
+            socket.emit('disconnectUser'); // Emit event to disconnect user
+        });
+
+        // Function to reload the page
+        function reloadPage() {
+            window.location.reload();
+        }
+
+        document.getElementById("sendButton").addEventListener("click", () => {
+            sendMessage();
+        });
+
+        document.getElementById("messageInput").addEventListener("keypress", (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            if (!recipientID) {
+                alert("You must connect to a user first.");
+                return;
+            }
+            const messageInput = document.getElementById("messageInput");
+            const message = messageInput.value.trim();
+            if (message) {
+                socket.emit('sendMessage', recipientID, message);
+                messageInput.value = '';
+                // Display the sent message in the local chat section
+                const messagesDiv = document.getElementById("messages");
+                const messageElement = document.createElement("p");
+                messageElement.style.backgroundColor = "#FFFFFF";
+                messageElement.style.borderRadius = "10px";
+                messageElement.style.padding = "10px";
+                messageElement.style.maxWidth = "70%";
+                messageElement.style.alignSelf = "flex-end";
+                messageElement.style.marginTop = "10px";
+                messageElement.style.marginBottom = "10px";
+                messageElement.style.marginLeft = "100px";
+                messageElement.style.marginRight = "10px";
+                messageElement.textContent = `You: ${message}`;
+                messagesDiv.appendChild(messageElement);
+                // Scroll to the bottom of the messages
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        socket.on('message', ({ userID, message }) => {
+            const messagesDiv = document.getElementById("messages");
+            const messageElement = document.createElement("p");
+            messageElement.textContent = `User: ${message}`;
+            messageElement.style.backgroundColor = "#DCF8C6";
+            messageElement.style.borderRadius = "10px";
+            messageElement.style.padding = "10px";
+            messageElement.style.maxWidth = "70%";
+            messageElement.style.alignSelf = "flex-start";
+            messageElement.style.marginTop = "10px";
+            messageElement.style.marginBottom = "10px";
+            messageElement.style.marginLeft = "20px";
+            messageElement.style.marginRight = "10px";
+            messagesDiv.appendChild(messageElement);
+            // Scroll to the bottom of the messages
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        // Toggle menu functionality
+        const toggleMenu = document.getElementById('toggleMenu');
+        const toggleBtn = document.getElementById('toggleBtn');
+
+        toggleBtn.addEventListener('click', () => {
+            toggleMenu.classList.toggle('active');
+        });
+
+        // Function to disable message input and send button
+        function disableMessageInput() {
+            document.getElementById("messageInput").disabled = true;
+            document.getElementById("sendButton").disabled = true;
+        }
+
+        // Function to enable message input and send button
+        function enableMessageInput() {
+            document.getElementById("messageInput").disabled = false;
+            document.getElementById("sendButton").disabled = false;
+        }
+
+        // Generate and update the user ID when the page loads
+        const generatedUserID = generateUserID();
+        updateUserIDInput(generatedUserID);
+
+    </script>
+
+</body>
+
+</html>

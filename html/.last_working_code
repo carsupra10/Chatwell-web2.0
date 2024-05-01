@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+</head>
+
+<body>
+    <div id="messages"></div>
+    <input type="text" id="userIDInput" placeholder="Enter your user ID...">
+    <button id="setUserIDButton">Set User ID</button>
+    <button id="connectButton">Connect</button>
+    <input type="text" id="messageInput" placeholder="Type a message...">
+    <button id="sendButton">Send</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let recipientID = '';
+
+        document.getElementById("setUserIDButton").addEventListener("click", () => {
+            const userIDInput = document.getElementById("userIDInput");
+            const userID = userIDInput.value.trim();
+            if (userID) {
+                socket.emit('setUserID', userID);
+                userIDInput.disabled = true;
+                document.getElementById("setUserIDButton").disabled = true;
+            }
+        });
+
+        document.getElementById("connectButton").addEventListener("click", () => {
+            const recipientID = prompt("Enter the recipient's user ID:");
+            if (recipientID) {
+                socket.emit('checkAndConnect', recipientID);
+            } else {
+                alert("Recipient ID cannot be empty.");
+            }
+        });
+
+
+
+        socket.on('connectionEstablished', ({ recipientID }) => {
+            recipientID = recipientID; // Update recipientID
+            document.getElementById("messageInput").disabled = false;
+            alert(`Connected to ${recipientID}.`);
+        });
+
+        socket.on('connectionRequest', ({ senderID }) => {
+            const accept = confirm(`${senderID} wants to connect. Accept?`);
+            if (accept) {
+                socket.emit('acceptConnection', senderID);
+            }
+        });
+
+        socket.on('userConnected', (userID) => {
+            recipientID = userID;
+            document.getElementById("connectButton").disabled = true;
+            document.getElementById("messageInput").disabled = false;
+            alert(`${userID} is now connected.`);
+            socket.emit('connectionEstablished', { recipientID });
+        });
+
+        socket.on('error', (errorMessage) => {
+            alert(errorMessage);
+        });
+
+        document.getElementById("sendButton").addEventListener("click", () => {
+            const messageInput = document.getElementById("messageInput");
+            const message = messageInput.value.trim();
+            if (message) {
+                socket.emit('sendMessage', recipientID, message);
+                messageInput.value = '';
+                // Display the sent message in the local chat section
+                const messagesDiv = document.getElementById("messages");
+                const messageElement = document.createElement("p");
+                messageElement.textContent = `You: ${message}`;
+                messagesDiv.appendChild(messageElement);
+            }
+        });
+
+        socket.on('message', ({ userID, message }) => {
+            const messagesDiv = document.getElementById("messages");
+            const messageElement = document.createElement("p");
+            messageElement.textContent = `${userID}: ${message}`;
+            messagesDiv.appendChild(messageElement);
+        });
+    </script>
+</body>
+
+</html>
